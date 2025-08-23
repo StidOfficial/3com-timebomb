@@ -1,0 +1,240 @@
+<html>
+	<head>
+		<title>3Com TimeBomb Activation Key Generator</title>
+		<style>
+			#serial-number {
+				text-transform: uppercase;
+			}
+
+			#serial-number:invalid {
+				outline-color: red;
+			}
+
+			fieldset, #serial-number {
+				margin-bottom: 1rem;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>3Com TimeBomb Activation Key Generator</h1>
+
+		<fieldset>
+			<legend>Supported softwares :</legend>
+			<ul>
+				<li>3Com Network Supervisor v5.2 (TNS)</li>
+			</ul>
+		</fieldset>
+
+		<label for="serial-number">Serial number:</label>
+		<input type="text" id="serial-number" size="22" maxlength="19" placeholder="TNS584CE7EDEF6FE6E5" pattern="[A-Z]{3}[0-9A-F]{16}">
+		<br/>
+
+		<label for="activation-key">Activation key:</label>
+		<input type="text" id="activation-key" size="22" maxlength="19" disabled>
+		<button id="copy-to-clipboard" disabled>Copy to clipboard</button>
+
+		<script>
+			const serialNumberInput = document.getElementById("serial-number")
+			const activationKeyInput = document.getElementById("activation-key")
+			const copyToClipboardButton = document.getElementById("copy-to-clipboard")
+
+			serialNumberInput.onkeyup = function(e) {
+				if(this.value.length != this.maxLength) {
+					activationKeyInput.value = null
+					copyToClipboardButton.toggleAttribute("disabled", true)
+					return
+				}
+
+				this.classList.remove("invalid")
+
+				const value = this.value.toUpperCase()
+
+				const prefix = value.substring(0, 3) // PACKAGE_ID
+				const strSerialNumber = value.slice(3)
+
+				if(/[G-Z]/.test(strSerialNumber)) {
+					activationKeyInput.value = null
+					copyToClipboardButton.toggleAttribute("disabled", true)
+					return
+				}
+
+				const baseSerialNumber = BigInt(`0x${strSerialNumber}`)
+
+				const serialNumber = TimeBombUtils.formatId(baseSerialNumber, prefix)
+				const activationKey = TimeBombUtils.makeKey(baseSerialNumber, NS_BaseRegistrationInformation.BASE_REGBITMASK)
+
+				activationKeyInput.value = TimeBombUtils.formatId(activationKey, prefix, false)
+				copyToClipboardButton.toggleAttribute("disabled", false)
+			}
+
+			copyToClipboardButton.onclick = function() {
+				navigator.clipboard.writeText(activationKeyInput.value)
+			}
+
+			// Missing NA, NM
+
+			// NS
+			class NS_BaseRegistrationInformation {
+				static PREFIX = "TNS"
+				static BASE_EVALTIME = 60
+				static BASE_REGBITMASK = 1886846028920470609n
+				static BASE_SERIAL_ENCODING_BITMASK = 7922577814949192645n
+			}
+
+			// RMA, RMC
+			class Default_BaseRegistrationInformation {
+				static PREFIX = "XXX"
+				static BASE_EVALTIME = 60
+				static BASE_REGBITMASK = 0n
+				static BASE_SERIAL_ENCODING_BITMASK = 0n
+			}
+
+			class FakeBaseRegistrationInformation {
+				static PREFIX = "TNS"
+				static BASE_EVALTIME = 0
+				static BASE_REGBITMASK = -3131812441039745270n
+				static BASE_SERIAL_ENCODING_BITMASK = 0n
+			}
+
+			class Version {
+				static VERSION_SEPERATOR = "."
+
+				constructor(versionString) {
+					this.value = versionString.split(Version.VERSION_SEPERATOR)
+				}
+
+				getMajorVersionNumber() {
+					if(this.value.length == 0)
+						return 0
+
+					return parseInt(this.value[0])
+				}
+
+				getFirstMinorVersionNumber() {
+					if(this.value.length < 2 || this.value[1].length == 0)
+						return 0
+
+					return parseInt(this.value[1].charAt(0))
+				}
+
+				getSecondMinorVersionNumber() {
+					if(this.value.length < 2 || this.value[1].length <= 1)
+						return 0
+
+					return parseInt(this.value[1].charAt(1))
+				}
+			}
+
+			class TimeBombUtils {
+				static DATE_ENCODING_BITMASK = 7922577814949192645n
+				static SIMPLE_CHAR_ENCRYPTION_KEY = "UeGPhSIfXLRCYaKAkHNdDciFJgEMBlVQZWjbT"
+				static SIMPLE_CHAR_ENCRYPTION_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ.0123456789"
+				static ID_LENGTH = 16
+
+				static makeId(encodingBitmask, date, lastRegisteredVersion, currentVersion) {
+					// ddMMyyHHmmss
+					const strDate = `${date.getDate().toString().padStart(2, "0")}${(date.getMonth() + 1).toString().padStart(2, "0")}${date.getFullYear().toString().slice(2)}${date.getHours().toString().padStart(2, "0")}${date.getMinutes().toString().padStart(2, "0")}${date.getSeconds().toString().padStart(2, "0")}`
+
+					var value = BigInt(strDate) << 24n
+					value |= BigInt(lastRegisteredVersion.getMajorVersionNumber() & 0xf) << 20n
+					value |= BigInt(lastRegisteredVersion.getFirstMinorVersionNumber() & 0xf) << 16n
+					value |= BigInt(lastRegisteredVersion.getSecondMinorVersionNumber() & 0xf) << 12n
+					value |= BigInt(currentVersion.getMajorVersionNumber() & 0xf) << 8n
+					value |= BigInt(currentVersion.getFirstMinorVersionNumber() & 0xf) << 4n
+					value |= BigInt(currentVersion.getSecondMinorVersionNumber() & 0xf)
+
+					return value ^ encodingBitmask
+				}
+
+				static makeKey(id, regBitmask) {
+					return id ^ regBitmask
+				}
+
+				static encodeDecodeId(originalString) {
+					var chars = [...originalString]
+					var newChars = [...originalString]
+					for(var i = 0; i < chars.length; i++) {
+						if(i < 2 || i > chars.length - 3)
+							newChars[i] = chars[i]
+						else
+							newChars[i] = chars[chars.length - i - 1]
+					}
+
+					return newChars.join("")
+				}
+
+				static getCurrentVersionFromId(id, encodingBitmask) {
+					const value = id ^ encodingBitmask
+
+					versionBuf = ""
+					versionBuf += value >>> 8 & 0xf
+					versionBuf += "."
+					versionBuf += value >>> 4 & 0xf
+					versionBuf += value & 0xf
+
+					return versionBuf
+				}
+
+				static getLastRegisteredVersionFromId(id, encodingBitmask) {
+					const value = id ^ encodingBitmask
+
+					versionBuf = ""
+					versionBuf += value >>> 20 & 0xf
+					versionBuf += "."
+					versionBuf += value >>> 16 & 0xf
+					versionBuf += value >>> 12 & 0xf
+
+					return versionBuf
+				}
+
+				static simpleASCIIEncrypt(decoded) {
+					decoded = decoded.toUpperCase()
+
+					var encoded = ""
+					for(var i = 0; i < decoded.length; i++) {
+						const index = TimeBombUtils.SIMPLE_CHAR_ENCRYPTION_ALPHABET.indexOf(decoded.charAt(i))
+						encoded += TimeBombUtils.SIMPLE_CHAR_ENCRYPTION_KEY.charAt(index)
+					}
+
+					return encoded
+				}
+
+				static simpleASCIIDecrypt(encoded) {
+					var decoded = ""
+
+					for(var i = 0; i < encoded.length; i++) {
+						const index = TimeBombUtils.SIMPLE_CHAR_ENCRYPTION_KEY.indexOf(encoded.charAt(i))
+						decoded += TimeBombUtils.SIMPLE_CHAR_ENCRYPTION_ALPHABET.charAt(index)
+					}
+
+					return decoded
+				}
+
+				static formatId(id, prefix, encrypt = false) {
+					var hexId = id.toString(16).padStart(16, "0")
+
+					if(encrypt)
+						hexId = TimeBombUtils.encodeDecodeId(hexId)
+
+					return (prefix + hexId).toUpperCase()
+				}
+			}
+
+			/*decoded = "4.0.1"
+			console.log("Encode", decoded, ":")
+			encoded = TimeBombUtils.simpleASCIIEncrypt(decoded)
+			console.log("-", encoded)
+			console.log("Decoded:", TimeBombUtils.simpleASCIIDecrypt(encoded))
+			decoded = "3NM"
+			console.log("Encode", decoded, ":")
+			encoded = TimeBombUtils.simpleASCIIEncrypt(decoded)
+			console.log("-", encoded)
+			console.log("Decoded:", TimeBombUtils.simpleASCIIDecrypt(encoded))*/
+
+			/*console.log("Decode prefix:", TimeBombUtils.simpleASCIIDecrypt("daN"))
+			console.log("Decode version:", TimeBombUtils.simpleASCIIDecrypt("ZEl"))*/
+
+			//const baseSerialNumber = TimeBombUtils.makeId(NS_BaseRegistrationInformation.BASE_SERIAL_ENCODING_BITMASK, new Date("01/01/2030 00:00:00"), new Version("5.2"), new Version("5.2"))
+		</script>
+	</body>
+</html>
